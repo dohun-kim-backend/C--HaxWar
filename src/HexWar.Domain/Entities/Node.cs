@@ -11,7 +11,7 @@ public class Node
 
     // 소유권 상태 
     // read-only 객체이지만 명시적으로 private set으로 변경
-    public NodeOwnership Ownership { get; private set; }
+    public NodeOwnership Ownership { get; set; }
 
     // 각 플레이어 별 유닛 배치 현황
     public Dictionary<PlayerSide, int> StationedUnits { get; } = new()
