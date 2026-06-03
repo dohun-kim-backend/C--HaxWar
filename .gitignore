@@ -1,0 +1,53 @@
+## Ignore Visual Studio temporary files, build results, and user settings
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Re]leases/
+x64/
+x86/
+[Aa]rm/
+[Aa]rm64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio 2015/2017/2019/2022 cache/options directory
+.vs/
+# Target directories of Visual Studio projects
+out/
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Rider / IntelliJ
+.idea/
+
+# Package files
+*.nupkg
+# NuGet Packages
+**/[Pp]ackages/*
+# Git submodules
+# (uncomment if you want to ignore submodules content)
+# /submodules/
+
+# OS-specific files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
