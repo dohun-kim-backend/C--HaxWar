@@ -130,6 +130,32 @@ public class Edge
         return encounters;
     }
 
+    public void RemoveTravelingGroup(PlayerSide side)
+    {
+        foreach (var kvp in TravelingUnits)
+        {
+            var groups = kvp.Value;
+            // 제거할 그룹 찾기 (Side가 동일한 그룹)
+            var toRemove = groups.Where(g => g.Side == side).ToList();
+
+            // 찾은 그룹 제거 
+            foreach (var g in toRemove)
+            {
+                groups.Remove(g);
+            }
+        }
+    }
+
+    public bool HasEncounterWaiting()
+    {
+        foreach (var kvp in TravelingUnits)
+        {
+            if (HasEncounter(kvp.Key, out _))
+                return true;
+        }
+        return false;
+    }
+
     // Any 란 -> 리스트에서 조건을 만족하는 값이 하나라도 있으면 true 반환, 없으면 false 반환 
     // () -> null 조건을 만족하는 값이 없으면 -> true
     // TravelingUnits.Any() -> 결과가 true면 !false -> false (값이 있으면 -> false) 

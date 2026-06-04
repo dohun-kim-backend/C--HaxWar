@@ -1,3 +1,5 @@
+using HexWar.Domain.Enums;
+
 namespace HexWar.Domain.ValueObjects;
 
 public readonly record struct EdgeId(NodeId From, NodeId To)
@@ -9,4 +11,13 @@ public readonly record struct EdgeId(NodeId From, NodeId To)
         : $"{To.Value}-{From.Value}";
 
     public override string ToString() => Key;
+
+    // 주어진 노드의 반대편 노드를 반환
+    public NodeId GetOppositeNode(NodeId nodeId)
+    {
+        if (nodeId == From) return To;
+        if (nodeId == To) return From;
+        throw new ArgumentException($"Node {nodeId} is not part of edge {this}");
+    }
+
 }
