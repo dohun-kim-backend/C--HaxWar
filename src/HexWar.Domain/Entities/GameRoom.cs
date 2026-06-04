@@ -1,12 +1,12 @@
 namespace HexWar.Domain.Entities;
 
+using HexWar.Domain.Commands;
 using HexWar.Domain.Enums;
 using HexWar.Domain.Events;
 using HexWar.Domain.Exceptions;
 using HexWar.Domain.ValueObjects;
-using HexWar.Domain.Commands;
 
-public class GameRoom
+public partial class GameRoom
 {
     public string RoomId { get; }
     public GamePhase Phase { get; private set; }
@@ -28,11 +28,10 @@ public class GameRoom
     // 최대 이동 가능한 유닛 수
     public const int MaxUnitsPerPlayer = 3;
 
-    // 도메인 이벤트
-    public List<IDomainEvent> DomainEvents { get; } = new();
+
 
     // 조우 이벤트 목록
-    public List<EncounterEvent> PendingEncounters { get; } = new();
+    public List<PendingEncounter> PendingEncounters { get; } = new();
 
     // 생성자 함수를 통한 기본 상태 정의
     public GameRoom(string roomId)
@@ -45,34 +44,40 @@ public class GameRoom
     // 게임 설정 단계 정의
     public void InitializeMap()
     {
-        // 실제 게임에서는 JSON/설정 파일에서 로드
-        CreateNode(new NodeId(1), "Alpha", isHeadquarters: false);
-        CreateNode(new NodeId(2), "Beta", isHeadquarters: false);
-        CreateNode(new NodeId(3), "Gamma", isHeadquarters: false);
-        CreateNode(new NodeId(4), "Delta", isHeadquarters: false);
-        CreateNode(new NodeId(5), "Epsilon", isHeadquarters: false);
-        CreateNode(new NodeId(6), "HQ", isHeadquarters: true);  // 중앙 본부
+        // 노드 생성 (6개 노드)
+        CreateNode(new NodeId(1), "서부 전초기지", NodeType.OutPost);
+        CreateNode(new NodeId(2), "북부 고지", NodeType.Chokepoint);
+        CreateNode(new NodeId(3), "동부 교차로", NodeType.SupplyLine);  // 보급로!
+        CreateNode(new NodeId(4), "남부 통로", NodeType.Chokepoint);
+        CreateNode(new NodeId(5), "동부 전초기지", NodeType.OutPost);
+        CreateNode(new NodeId(6), "중앙 사령부", NodeType.Headquarters);
 
-        // 간선 생성 (예시 그래프)
-        CreateEdge(new NodeId(1), new NodeId(2), new Distance(1));
-        CreateEdge(new NodeId(2), new NodeId(3), new Distance(2));
-        CreateEdge(new NodeId(3), new NodeId(4), new Distance(1));
-        CreateEdge(new NodeId(4), new NodeId(5), new Distance(2));
-        CreateEdge(new NodeId(5), new NodeId(1), new Distance(1));
-        CreateEdge(new NodeId(6), new NodeId(1), new Distance(1));
-        CreateEdge(new NodeId(6), new NodeId(2), new Distance(1));
-        CreateEdge(new NodeId(6), new NodeId(3), new Distance(1));
-        CreateEdge(new NodeId(6), new NodeId(4), new Distance(1));
-        CreateEdge(new NodeId(6), new NodeId(5), new Distance(1));
+        // 간선 생성 (수정안: N4-N2 연결 제거)
+        CreateEdge(new NodeId(1), new NodeId(2), new Distance(1));  // 서부-북부
+        CreateEdge(new NodeId(1), new NodeId(4), new Distance(2));  // 서부-남부 (우회로)
+        CreateEdge(new NodeId(1), new NodeId(5), new Distance(2));  // 서부-동부전초
+        CreateEdge(new NodeId(1), new NodeId(6), new Distance(1));  // 서부-본부
+
+        CreateEdge(new NodeId(2), new NodeId(3), new Distance(2));  // 북부-동부교차로
+        CreateEdge(new NodeId(2), new NodeId(6), new Distance(1));  // 북부-본부
+
+        CreateEdge(new NodeId(3), new NodeId(4), new Distance(1));  // 동부교차로-남부
+        CreateEdge(new NodeId(3), new NodeId(5), new Distance(1));  // 동부교차로-동부전초
+        CreateEdge(new NodeId(3), new NodeId(6), new Distance(1));  // 동부교차로-본부
+
+        CreateEdge(new NodeId(4), new NodeId(5), new Distance(1));  // 남부-동부전초
+        CreateEdge(new NodeId(4), new NodeId(6), new Distance(1));  // 남부-본부
+
+        CreateEdge(new NodeId(5), new NodeId(6), new Distance(1));  // 동부전초-본부
     }
 
-    public void CreateNode(NodeId id, string name, bool isHeadquarters)
+    public void CreateNode(NodeId id, string name, NodeType type)
     {
         // 이미 존재하는 노드인지 검사
         if (Nodes.ContainsKey(id))
             throw new InvalidOperationException($"Node with id {id} already exists in the game room.");
 
-        var node = new Node(id, name, isHeadquarters);
+        var node = new Node(id, name, type);
         Nodes[id] = node;
 
     }
@@ -107,10 +112,8 @@ public class GameRoom
         // 유닛 배치 초기화
         // Player A → Node 1, Player B → Node 5
         NodeId startNode = side == PlayerSide.A ? new NodeId(1) : new NodeId(5);
-        Nodes[startNode].StationedUnits[side] = 3;
-        Nodes[startNode].Ownership = side == PlayerSide.A
-            ? NodeOwnership.PlayerA
-            : NodeOwnership.PlayerB;
+        Nodes[startNode].Units[side].AddMobile(3);
+        Nodes[startNode].Ownership = side == PlayerSide.A ? NodeOwnership.PlayerA : NodeOwnership.PlayerB;
 
 
         // 플레이 모집 여부 확인
@@ -119,48 +122,12 @@ public class GameRoom
             Phase = GamePhase.Planning;
             CurrentRound = 1;
             // 이벤트 발생 목록에 추가 
-            DomainEvents.Add(new GameStarted(RoomId));
+            RaiseEvent(new GameStarted(RoomId, Players[PlayerSide.A], Players[PlayerSide.B]));
         }
 
         return side;
     }
 
-    public void MoveUnits(PlayerSide side, MoveCommand command)
-    {
-        // 계획 단계가 아니라면 움직인 제한
-        if (Phase != GamePhase.Planning)
-        {
-            throw new DomainException($"Cannot move in {Phase} phase");
-        }
-
-        // 현재 사용한 유닛 수 초과 여부 확인
-        if (UnitUsedThisRound[side] > MaxUnitsPerPlayer)
-        {
-            throw new DomainException("All 3 units already used this round");
-        }
-
-        // 가용 이동 유닛 확인
-        int availableUnits = MaxUnitsPerPlayer - UnitUsedThisRound[side];
-        int moveCount = Math.Min(command.UnitIds.Count, availableUnits);
-
-        if (moveCount <= 0)
-        {
-            throw new DomainException("No units available to move");
-        }
-
-        // 경로 존재 여부 확인 [ edge 검증 ]
-        ValidatePath(command.From, command.To);
-
-        // 노드 변경 사항 진행 
-        Nodes[command.From].DepartUnits(side, moveCount);
-        UnitUsedThisRound[side] += moveCount;
-
-        // 간선 변경사항 진행
-        var edgeId = new EdgeId(command.From, command.To);
-        Edges[edgeId].StartTravel(side, moveCount, command.To);
-
-        DomainEvents.Add(new UnitsMoveStarted(RoomId, side, command.From, command.To, moveCount, CurrentRound));
-    }
 
     private void ValidatePath(NodeId from, NodeId to)
     {
@@ -172,106 +139,47 @@ public class GameRoom
 
     }
 
-    // 라운드 내부 명령 순차 소비
-    public void ResolveRound()
+
+
+    private List<ArrivalInfo> ProcessAllEdgeAdvances()
     {
-        if (Phase != GamePhase.Planning)
-            throw new DomainException("Cannot resolve round outside Planning phase");
-
-        Phase = GamePhase.Resolution;
-
-        // 1. 도착 병력 정산
-        var arrivedUnits = new Dictionary<(NodeId, PlayerSide), int>();
+        var arrivals = new List<ArrivalInfo>();
 
         foreach (var edge in Edges.Values)
         {
             var arrived = edge.AdvanceRound();
             foreach (var group in arrived)
             {
-                var key = (group.Destination, group.Side);
-                if (!arrivedUnits.ContainsKey(key))
-                {
-                    arrivedUnits[key] = 0;
-                }
-                arrivedUnits[key] += group.UnitCount;
+                arrivals.Add(new ArrivalInfo(
+                    group.Destination, group.Side, group.UnitCount, edge.Id
+                ));
             }
         }
 
-        // 2. 조우 이벤트 조회
-        var encounters = CheckEncounters();
-        PendingEncounters.AddRange(encounters);
+        return arrivals;
+    }
 
-        // 3. 조우 관련 이벤트가 처리되어야 하므로 도착 유닛 처리 제외
-        var unitsInEncounter = new HashSet<(EdgeId, int, PlayerSide)>();
+    private List<EncounterInfo> FindAllEncounters()
+    {
+        return Edges.Values
+            .SelectMany(e => e.FindAllEncounters())
+            .ToList();
+    }
+
+    public List<ArrivalInfo> GetBlockedUnits(List<EncounterInfo> encounters)
+    {
+        var blocked = new List<ArrivalInfo>();
+
         foreach (var enc in encounters)
         {
-            // TODO 조우 관련 해소 이벤트 정의 필요
+            blocked.Add(new ArrivalInfo(enc.GroupA.Destination, enc.GroupA.Side, enc.GroupA.UnitCount, enc.EdgeId));
+            blocked.Add(new ArrivalInfo(enc.GroupB.Destination, enc.GroupB.Side, enc.GroupB.UnitCount, enc.EdgeId));
         }
 
-        // 4. 노드 별 도착 병력 정리
-        foreach (var kvp in arrivedUnits)
-        {
-            var (nodeId, side) = kvp.Key;
-            int count = kvp.Value;
-            Nodes[nodeId].ArriveUnits(side, count);
-        }
-
-        // 다음 라운드 준비 작업
-        CurrentRound++;
-        UnitUsedThisRound[PlayerSide.A] = 0;
-        UnitUsedThisRound[PlayerSide.B] = 0;
-
-        // 5. 게임 종료 체크
-        if (CheckGameOver() || CurrentRound > MaxRounds)
-        {
-            Phase = GamePhase.GameOver;
-            DomainEvents.Add(new GameOver(RoomId, GetWinner()));
-        }
-        else
-        {
-            Phase = GamePhase.Planning;
-        }
-
-        DomainEvents.Add(new RoundResolved(RoomId, CurrentRound - 1));
+        return blocked;
     }
 
-    private List<EncounterEvent> CheckEncounters()
-    {
-        var encounters = new List<EncounterEvent>();
 
-        // 모든 간선 검사를 위한 for
-        foreach (var edge in Edges.Values)
-        {
-            // 간선 내부 유닛들에 따른 조우 이벤트 탐색
-            foreach (var kvp in edge.TravelingUnits)
-            {
-                if (edge.HasEncounter(kvp.Key, out var groups) && groups != null)
-                {
-                    encounters.Add(new EncounterEvent(
-                        edge.Id,
-                        groups[0],
-                        groups[1],
-                        kvp.Key // 남은 라운드
-                    ));
-                }
-            }
-        }
-
-        return encounters;
-    }
-
-    public void ResolveEncounter(EdgeId edgeId, PlayerSide deciderSide, EncounterDecision decision)
-    {
-        var encounter = PendingEncounters.FirstOrDefault(e => e.EdgeId == edgeId);
-        if (encounter == null)
-            throw new DomainException("No pending encounter on this edge");
-
-        // TODO: 결정에 따른 유닛 이동 처리
-        // Advance → 전진 계속
-        // Retreat → 출발지로 복귀 (다시 Distance만큼 이동)
-
-        PendingEncounters.Remove(encounter);
-    }
 
     // --- 승리 조건 ---
 
