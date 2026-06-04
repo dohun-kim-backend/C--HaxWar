@@ -23,7 +23,7 @@ public class GameRoomTests
         var side = _room.AddPlayer(new PlayerId("player1"));
 
         Assert.Equal(PlayerSide.A, side);
-        Assert.Equal(3, _room.Nodes[new NodeId(1)].StationedUnits[PlayerSide.A]);
+        Assert.Equal(3, _room.Nodes[new NodeId(1)].GetTotalCount(PlayerSide.A));
         Assert.Equal(NodeOwnership.PlayerA, _room.Nodes[new NodeId(1)].Ownership);
     }
 
@@ -34,10 +34,10 @@ public class GameRoomTests
         _room.AddPlayer(new PlayerId("p2"));
         // 현재 Phase: Planning
 
-        var cmd = new MoveCommand(new NodeId(1), new NodeId(2), new List<int> { 1, 2 });
+        var cmd = new MoveCommand(new NodeId(1), new NodeId(2), 2);
         _room.MoveUnits(PlayerSide.A, cmd);
 
-        Assert.Equal(1, _room.Nodes[new NodeId(1)].StationedUnits[PlayerSide.A]);
+        Assert.Equal(1, _room.Nodes[new NodeId(1)].GetTotalCount(PlayerSide.A));
         Assert.Equal(2, _room.UnitUsedThisRound[PlayerSide.A]);
 
         var edgeId = new EdgeId(new NodeId(1), new NodeId(2));
@@ -48,8 +48,8 @@ public class GameRoomTests
     public void SameNode_EqualUnits_ShouldBeContested()
     {
         var node = _room.Nodes[new NodeId(2)];
-        node.ArriveUnits(PlayerSide.A, 2);
-        node.ArriveUnits(PlayerSide.B, 2);
+        node.ArriveMobileUnits(PlayerSide.A, 2);
+        node.ArriveMobileUnits(PlayerSide.B, 2);
 
         Assert.Equal(NodeOwnership.Contested, node.Ownership);
     }
@@ -58,7 +58,7 @@ public class GameRoomTests
     public void Headquarters_ShouldAlwaysBeNeutral()
     {
         var hq = _room.Nodes[new NodeId(6)];
-        hq.ArriveUnits(PlayerSide.A, 10);
+        hq.ArriveMobileUnits(PlayerSide.A, 10);
 
         Assert.Equal(NodeOwnership.Neutral, hq.Ownership);
     }
