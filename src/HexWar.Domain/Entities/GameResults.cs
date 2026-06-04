@@ -1,8 +1,8 @@
 namespace HexWar.Domain.Entities;
 
 using HexWar.Domain.Enums;
-using HexWar.Domain.ValueObjects;
 using HexWar.Domain.Events;
+using HexWar.Domain.ValueObjects;
 
 public record MoveResult(int ActualMoved, NodeId From, NodeId To);
 
@@ -52,4 +52,24 @@ public class PendingEncounter
             OutcomeB = outcome;
         }
     }
+
+    public bool HasDecided(PlayerSide side) => side == PlayerSide.A ? DecisionA.HasValue : DecisionB.HasValue;
+
+    public EncounterDecision? GetDecision(PlayerSide side) => side == PlayerSide.A ? DecisionA : DecisionB;
 }
+
+/*
+[PendingEncounter on Edge N1↔N4]
+
+1. Player A 결정: Advance
+   → MarkDecided(PlayerA, Advance, outcomeA)
+   → BothDecided = false (B 결정 기다림)
+   → Events: EncounterDecisionMade(PlayerA, Advance)
+
+2. Player B 결정: Retreat
+   → MarkDecided(PlayerB, Retreat, outcomeB)
+   → BothDecided = true → 해소!
+   → Events: EncounterDecisionMade(PlayerB, Retreat)
+   → Events: EncounterResolved(결과 요약)
+   → PendingEncounters.Remove(pending)
+      */
