@@ -25,6 +25,13 @@ public partial class GameRoom
         { PlayerSide.B, 0 }
     };
 
+    // Planning 단계에서 예약된 이동 명령 (취소 불가)
+    private Dictionary<PlayerSide, List<PendingMove>> _pendingMoves = new()
+    {
+        { PlayerSide.A, new List<PendingMove>() },
+        { PlayerSide.B, new List<PendingMove>() }
+    };
+
     // 최대 이동 가능한 유닛 수
     public const int MaxUnitsPerPlayer = 3;
 
@@ -32,6 +39,13 @@ public partial class GameRoom
 
     // 조우 이벤트 목록
     public List<PendingEncounter> PendingEncounters { get; } = new();
+
+    // 조우 결정 완료 여부
+    public Dictionary<PlayerSide, bool> EncounterDecisionReady { get; } = new()
+    {
+        { PlayerSide.A, false },
+        { PlayerSide.B, false }
+    };
 
     // 생성자 함수를 통한 기본 상태 정의
     public GameRoom(string roomId)
@@ -201,4 +215,67 @@ public partial class GameRoom
         if (nodesB > nodesA) return PlayerSide.B;
         return null; // 무승부
     }
+
+    // Planning 단계 내에 주요 내용 처리 여부
+    public bool IsPlanningComplete
+    {
+        get
+        {
+            if (Phase != GamePhase.Planning) return false;
+
+            if (PendingEncounters.Any())
+            {
+                bool allEncounterResolve = EncounterDecisionReady[PlayerSide.A] && EncounterDecisionReady[PlayerSide.B];
+                bool allUnitUsed = UnitUsedThisRound[PlayerSide.A] >= MaxUnitsPerPlayer && UnitUsedThisRound[PlayerSide.B] >= MaxUnitsPerPlayer;
+
+                return allEncounterResolve && allUnitUsed;
+            }
+
+            return UnitUsedThisRound[PlayerSide.A] >= MaxUnitsPerPlayer && UnitUsedThisRound[PlayerSide.B] >= MaxUnitsPerPlayer;
+        }
+
+    }
+
+    // --- 규칙 검증 메서드 --- 애플리케이션 계층에서 검증을 위해 단독 호출할 수 있음
+    public bool CanMoveUnits(PlayerSide side)
+    {
+        return Phase == GamePhase.Planning && UnitUsedThisRound[side] < MaxUnitsPerPlayer;
+    }
+
+    public int GetAvailableUnits(PlayerSide side)
+    {
+        if (Phase != GamePhase.Planning) return 0;
+        return MaxUnitsPerPlayer - UnitUsedThisRound[side];
+    }
+
+    public bool HasPendingEncounterOn(EdgeId edgeId)
+    {
+        return PendingEncounters.Any(p => p.EdgeId == edgeId);
+    }
+
+    public List<PendingEncounter> GetUndecidedEncounters(PlayerSide side)
+    {
+        return PendingEncounters
+        .Where(e => !e.HasDecided(side))
+        .ToList();
+    }
+
+    public bool IsReadyForResolution()
+    {
+        if (Phase != GamePhase.Planning) return false;
+        bool allEncountersResolved = PendingEncounters.All(e => e.BothDecided);
+        return allEncountersResolved;
+    }
+
+    public int GetRemainingUnits(PlayerSide side)
+    {
+        return MaxUnitsPerPlayer - UnitUsedThisRound[side];
+    }
+
+    public IReadOnlyList<PendingMove> GetPendingMoves(PlayerSide side)
+    {
+        return _pendingMoves[side].AsReadOnly();
+    }
 }
+
+public record PendingMove(NodeId From, NodeId To, int Count);

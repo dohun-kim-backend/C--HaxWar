@@ -14,6 +14,7 @@ public partial class GameRoom
     private List<EncounterOccurred> _encounterEvents = new();
     private List<NodeOwnershipChanged> _ownershipChanges = new();
     private List<ArrivalRecord> _arrivalRecords = new();
+    private List<MoveExecutionRecord> _moveExecutionRecords = new();
 
     private void RaiseEvent(IDomainEvent domainEvent)
     {
@@ -26,6 +27,7 @@ public partial class GameRoom
         _encounterEvents.Clear();
         _ownershipChanges.Clear();
         _arrivalRecords.Clear();
+        _moveExecutionRecords.Clear();
     }
 
     private void RecordEncounter(EncounterOccurred encounter)
@@ -45,7 +47,12 @@ public partial class GameRoom
         _arrivalRecords.Add(new ArrivalRecord(destination, side, count, viaEdge));
     }
 
-    // 수정된 ResolveRound 메서드
+    private void RecordMoveExecution(PlayerSide side, NodeId from, NodeId to, int count)
+    {
+        _moveExecutionRecords.Add(new MoveExecutionRecord(from, to, side, count));
+    }
+
+    // 
     public RoundResolutionResult ResolveRound()
     {
         if (Phase != GamePhase.Planning)
@@ -55,22 +62,43 @@ public partial class GameRoom
         ClearEvents();
         var result = new RoundResolutionResult();
 
-        // 1. 모든 간선에서 1라운드 진행 → 도착 유닛 수집
+        // ============================================================
+        // 1단계: 모든 예약된 이동을 실제로 실행
+        // ============================================================
+        foreach (var side in new[] { PlayerSide.A, PlayerSide.B })
+        {
+            foreach (var move in _pendingMoves[side])
+            {
+                var sourceNode = Nodes[move.From];
+
+                // 이제 진짜로 유닛 차감
+                sourceNode.DepartMobileUnits(side, move.Count);
+
+                // 간선에 배치
+                var edgeId = new EdgeId(move.From, move.To);
+                Edges[edgeId].StartTravel(side, move.Count, move.To);
+
+                // 출발 이벤트 (이미 Planning에서 발행했지만, 
+                // Resolution에서도 실제 실행 기록으로 남김)
+                RecordMoveExecution(side, move.From, move.To, move.Count);
+            }
+        }
+
+        // ============================================================
+        // 2단계: 모든 간선에서 1라운드 진행
+        // ============================================================
         var arrivals = ProcessAllEdgeAdvances();
 
-        // 2. 조우 확인
+        // ============================================================
+        // 3단계: 조우 확인
+        // ============================================================
         var encounters = FindAllEncounters();
 
-        // 3. 조우 이벤트 기록
         foreach (var enc in encounters)
         {
             var edge = Edges[enc.EdgeId];
             var encounterEvent = new EncounterOccurred(
-                RoomId,
-                enc.EdgeId,
-                edge.From,
-                edge.To,
-                enc.RemainingRounds,
+                RoomId, enc.EdgeId, edge.From, edge.To, enc.RemainingRounds,
                 new EncounterParticipantInfo(enc.GroupA.Side, enc.GroupA.UnitCount),
                 new EncounterParticipantInfo(enc.GroupB.Side, enc.GroupB.UnitCount),
                 CurrentRound
@@ -79,10 +107,11 @@ public partial class GameRoom
             result.Encounters.Add(encounterEvent);
         }
 
-        // 4. 조우 중인 유닛 식별
+        // ============================================================
+        // 4단계: 조우 없는 유닛만 도착 처리
+        // ============================================================
         var blockedUnits = GetBlockedUnits(encounters);
 
-        // 5. 조우 없는 유닛 도착 처리
         foreach (var arrival in arrivals)
         {
             if (!blockedUnits.Contains(arrival))
@@ -97,28 +126,23 @@ public partial class GameRoom
                 if (node.Ownership != previousOwnership)
                 {
                     RecordOwnershipChange(
-                        arrival.Destination,
-                        previousOwnership,
-                        node.Ownership,
-                        node.IsSupplyLine
+                        arrival.Destination, previousOwnership,
+                        node.Ownership, node.IsSupplyLine
                     );
                 }
 
                 RaiseEvent(new UnitsArrived(
-                    RoomId,
-                    arrival.Destination,
-                    arrival.Side,
-                    arrival.Count,
-                    arrival.ViaEdge,
-                    CurrentRound,
-                    node.Ownership
+                    RoomId, arrival.Destination, arrival.Side,
+                    arrival.Count, arrival.ViaEdge, CurrentRound, node.Ownership
                 ));
 
                 result.ArrivedUnits.Add(arrival);
             }
         }
 
-        // 6. 조우 Pending 등록
+        // ============================================================
+        // 5단계: 조우 Pending 등록
+        // ============================================================
         foreach (var encEvent in _encounterEvents)
         {
             var edge = Edges[encEvent.EdgeId];
@@ -128,35 +152,36 @@ public partial class GameRoom
             var groupB = travelingGroups.First(g => g.Side == PlayerSide.B);
 
             var pending = new PendingEncounter(
-                encEvent.EdgeId,
-                groupA,
-                groupB,
-                encEvent.RemainingRounds
+                encEvent.EdgeId, groupA, groupB, encEvent.RemainingRounds
             );
             PendingEncounters.Add(pending);
             result.PendingEncounters.Add(pending);
         }
 
-        // 7. 노드 출발 기록 초기화
+        // ============================================================
+        // 6단계: 정리 및 다음 라운드 준비
+        // ============================================================
         foreach (var node in Nodes.Values)
             node.ClearDepartureHistory();
 
-        // 8. 라운드 카운터 증가
+        // 예약된 이동 초기화
+        _pendingMoves[PlayerSide.A].Clear();
+        _pendingMoves[PlayerSide.B].Clear();
+
         int completedRound = CurrentRound;
         CurrentRound++;
         UnitUsedThisRound[PlayerSide.A] = 0;
         UnitUsedThisRound[PlayerSide.B] = 0;
 
-        // 9. 라운드 해소 이벤트 발행
+        // 라운드 해소 이벤트
         RaiseEvent(new RoundResolved(
-            RoomId,
-            completedRound,
-            _arrivalRecords,
-            _encounterEvents,
-            _ownershipChanges
+            RoomId, completedRound, _arrivalRecords,
+            _encounterEvents, _ownershipChanges, _moveExecutionRecords
         ));
 
-        // 10. 게임 종료 체크
+        // ============================================================
+        // 7단계: 게임 종료 체크
+        // ============================================================
         if (CheckGameOver() || CurrentRound > MaxRounds)
         {
             Phase = GamePhase.GameOver;
@@ -172,7 +197,6 @@ public partial class GameRoom
             };
 
             RaiseEvent(new GameOver(RoomId, winner, reason, completedRound, scores));
-
             result.GameOver = true;
             result.Winner = winner;
         }
@@ -185,8 +209,8 @@ public partial class GameRoom
 
         return result;
     }
-
     // 수정된 MoveUnits 메서드
+    // Planning 계획 단계에서 유닛 차감되는 문제 수정 
     public MoveResult MoveUnits(PlayerSide side, MoveCommand command)
     {
         if (Phase != GamePhase.Planning)
@@ -195,57 +219,64 @@ public partial class GameRoom
         if (UnitUsedThisRound[side] >= MaxUnitsPerPlayer)
             throw new DomainException("All units already moved this round");
 
-        int requested = Math.Min(command.UnitCount, MaxUnitsPerPlayer - UnitUsedThisRound[side]);
+        // 이번 명령으로 사용할 유닛 수 (남은 유닛 수를 초과할 수 없음)
+        int remainingUnits = MaxUnitsPerPlayer - UnitUsedThisRound[side];
+        int actualCount = Math.Min(command.UnitCount, remainingUnits);
+
+        if (actualCount <= 0)
+            throw new DomainException("No units available to commit");
 
         ValidatePath(command.From, command.To);
 
         var sourceNode = Nodes[command.From];
-        int actualMoved = sourceNode.DepartMobileUnits(side, requested);
 
-        UnitUsedThisRound[side] += actualMoved;
+        // 출발지에 실제로 유닛이 충분한지 확인만 (차감은 아직 안 함)
+        int available = sourceNode.GetMobileCount(side);
 
-        var edgeId = new EdgeId(command.From, command.To);
-        Edges[edgeId].StartTravel(side, actualMoved, command.To);
+        if (available < actualCount)
+            throw new DomainException(
+                $"Not enough units at {command.From}. Available: {available}, Requested: {actualCount}");
 
-        // 출발 이벤트 (공개 정보만)
-        RaiseEvent(new UnitsDeparted(RoomId, side, command.From, actualMoved, CurrentRound));
+        // 예약 확정 (취소 불가)
+        _pendingMoves[side].Add(new PendingMove(command.From, command.To, actualCount));
+        UnitUsedThisRound[side] += actualCount;
 
-        return new MoveResult(actualMoved, command.From, command.To);
+        // 이벤트 발행
+        RaiseEvent(new UnitsDeparted(RoomId, side, command.From, actualCount, CurrentRound));
+
+        return new MoveResult(actualCount, command.From, command.To);
     }
 
-    // 수정된 ResolveEncounter 메서드
+    // 
     public void ResolveEncounter(EdgeId edgeId, PlayerSide deciderSide, EncounterDecision decision)
     {
+        if (Phase != GamePhase.Planning)
+            throw new DomainException($"Encounter decisions must be made during Planning phase");
+
         var pending = PendingEncounters.FirstOrDefault(e => e.EdgeId == edgeId);
         if (pending == null)
-            throw new DomainException("No pending encounter on this edge");
+            throw new DomainException($"No pending encounter on edge {edgeId}");
 
+        // 이미 결정했는지 확인 (번복 불가)
+        if (pending.HasDecided(deciderSide))
+            throw new DomainException("Decision already made for this encounter and cannot be changed");
+
+        // 결정 처리
         var edge = Edges[edgeId];
         var decidingGroup = pending.GroupA.Side == deciderSide ? pending.GroupA : pending.GroupB;
-        var otherGroup = pending.GroupA.Side == deciderSide ? pending.GroupB : pending.GroupA;
 
-        // 결정 이벤트 발행 (비공개)
-        RaiseEvent(new EncounterDecisionMade(
-            RoomId,
-            deciderSide,
-            edgeId,
-            decision,
-            decidingGroup.UnitCount,
-            CurrentRound
-        ));
-
-        // 결정에 따른 처리
         EncounterOutcome outcome;
         if (decision == EncounterDecision.Retreat)
         {
-            NodeId retreatDestination = GetRetreatDestination(edge, deciderSide);
+            NodeId retreatDestination = edge.Id.GetOppositeNode(decidingGroup.Destination);
+            edge.RemoveTravelingGroup(deciderSide);
             edge.StartTravel(deciderSide, decidingGroup.UnitCount, retreatDestination);
 
             outcome = new EncounterOutcome(
                 deciderSide,
                 retreatDestination,
                 decidingGroup.UnitCount,
-                edge.Distance.RoundsRequired  // 복귀 시 원래 거리만큼 다시 이동
+                edge.Distance.RoundsRequired
             );
 
             RaiseEvent(new UnitsRetreated(RoomId, deciderSide, edgeId, decidingGroup.UnitCount, CurrentRound));
@@ -256,43 +287,56 @@ public partial class GameRoom
                 deciderSide,
                 decidingGroup.Destination,
                 decidingGroup.UnitCount,
-                pending.RemainingRounds  // 전진 시 남은 라운드 유지
+                pending.RemainingRounds
             );
 
             RaiseEvent(new UnitsAdvanced(RoomId, deciderSide, edgeId, decidingGroup.UnitCount, CurrentRound));
         }
 
-        // 결정 등록
+        // 결정 확정 (변경 불가)
         pending.MarkDecided(deciderSide, decision, outcome);
 
-        // 양측 모두 결정 완료 시 해소 이벤트 발행
+        // 비공개 이벤트
+        RaiseEvent(new EncounterDecisionMade(
+            RoomId, deciderSide, edgeId, decision, decidingGroup.UnitCount, CurrentRound
+        ));
+
+        // 양측 모두 결정 완료
         if (pending.BothDecided)
         {
             PendingEncounters.Remove(pending);
-
             RaiseEvent(new EncounterResolved(
-                RoomId,
-                edgeId,
-                pending.DecisionA!.Value,
-                pending.DecisionB!.Value,
-                pending.OutcomeA!,
-                pending.OutcomeB!,
+                RoomId, edgeId,
+                pending.DecisionA!.Value, pending.DecisionB!.Value,
+                pending.OutcomeA!, pending.OutcomeB!,
                 CurrentRound
             ));
         }
     }
 
+    // 미사용 메서드 추후 삭제 여부 결정 
     private NodeId GetRetreatDestination(Edge edge, PlayerSide side)
     {
-        // TravelingGroup에 출발지 정보가 없으므로,
-        // 간선의 양 끝 노드 중 해당 플레이어가 더 많은 유닛을 보유한 곳으로 추정
-        var nodeFrom = Nodes[edge.From];
-        var nodeTo = Nodes[edge.To];
+        // 가장 먼저 도착한 이동 그룹을 찾음
+        // travelingUnits의 키값은 라운드 수
+        // 가장 작은 키값을 가진 그룹이 가장 먼저 도착
+        // Key 라운드 순으로 자동 정렬되는 자료형 사용 (SortedList)
+        var group = edge.TravelingUnits
+            .SelectMany(kvp => kvp.Value)
+            .FirstOrDefault(g => g.Side == side);
 
-        // 더 많은 유닛이 있는 노드가 출발지일 가능성이 높음
-        if (nodeFrom.GetTotalCount(side) >= nodeTo.GetTotalCount(side))
-            return edge.From;
-        else
-            return edge.To;
+        if (group == null)
+            throw new InvalidOperationException($"No traveling group found for {side} on edge {edge.Id}");
+
+        // 목적지의 반대편 노드가 출발지
+        return edge.Id.GetOppositeNode(group.Destination);
+    }
+
+    public void ClearDomainEvents()
+    {
+        _domainEvents.Clear();
+        _encounterEvents.Clear();
+        _ownershipChanges.Clear();
+        _arrivalRecords.Clear();
     }
 }
