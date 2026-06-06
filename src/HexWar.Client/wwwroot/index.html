@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HexWar - 진지 빼앗기 게임</title>
+    <link rel="stylesheet" href="css/game.css">
+</head>
+
+<body>
+    <!-- 로그인 화면 -->
+    <div id="login-screen" class="screen active">
+        <div class="login-box">
+            <h1>⚔️ HexWar</h1>
+            <p>진지 빼앗기 전략 게임</p>
+            <input type="text" id="player-name" placeholder="플레이어 이름" maxlength="20">
+            <button id="btn-find-match" disabled>매치 찾기</button>
+            <div id="match-status"></div>
+        </div>
+    </div>
+
+    <!-- 게임 화면 -->
+    <div id="game-screen" class="screen">
+        <!-- 상단 정보 -->
+        <div class="top-bar">
+            <div class="player-info" id="player-info">
+                <span class="player-badge" id="my-side">⚔️</span>
+                <span id="round-info">라운드 1</span>
+            </div>
+            <div class="phase-info" id="phase-info">계획 단계</div>
+            <div class="score-info">
+                <span id="score-a">A: 1</span>
+                <span id="score-b">B: 1</span>
+            </div>
+        </div>
+
+        <!-- 메인 영역 -->
+        <div class="main-area">
+            <!-- 게임 보드 -->
+            <div class="board-container">
+                <svg id="game-board" viewBox="0 0 600 500"></svg>
+            </div>
+
+            <!-- 사이드 패널 -->
+            <div class="side-panel">
+                <!-- 이동 명령 -->
+                <div class="panel-section" id="move-section">
+                    <h3>⚡ 유닛 이동</h3>
+                    <div id="move-controls">
+                        <div class="move-info">
+                            <span>출발: <strong id="selected-from">-</strong></span>
+                            <span>도착: <strong id="selected-to">-</strong></span>
+                            <span>이동 가능: <strong id="available-units">3</strong></span>
+                        </div>
+                        <div class="unit-selector">
+                            <button class="unit-btn" data-count="1">1기</button>
+                            <button class="unit-btn" data-count="2">2기</button>
+                            <button class="unit-btn" data-count="3">3기</button>
+                        </div>
+                        <button id="btn-move" class="action-btn" disabled>이동 명령</button>
+                    </div>
+                    <div id="pending-moves"></div>
+                </div>
+
+                <!-- 조우 결정 -->
+                <div class="panel-section" id="encounter-section" style="display:none;">
+                    <h3>⚡ 조우 발생!</h3>
+                    <div id="encounter-info"></div>
+                    <div class="encounter-actions">
+                        <button class="action-btn advance-btn" id="btn-advance">⚔️ 전진</button>
+                        <button class="action-btn retreat-btn" id="btn-retreat">🏃 복귀</button>
+                    </div>
+                </div>
+
+                <!-- 게임 로그 -->
+                <div class="panel-section">
+                    <h3>📋 게임 로그</h3>
+                    <div id="game-log"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 하단 상태바 -->
+        <div class="bottom-bar">
+            <span id="connection-status">연결 중...</span>
+            <span id="timer-display"></span>
+        </div>
+    </div>
+
+    <!-- 게임 종료 화면 -->
+    <div id="gameover-overlay" class="overlay" style="display:none;">
+        <div class="gameover-box">
+            <h1 id="gameover-title">게임 종료!</h1>
+            <p id="gameover-result"></p>
+            <button id="btn-new-match">새 매치 찾기</button>
+        </div>
+    </div>
+
+    <script src="js/gameClient.js"></script>
+    <script src="js/gameRenderer.js"></script>
+    <script src="js/gameUI.js"></script>
+</body>
+
+</html>
