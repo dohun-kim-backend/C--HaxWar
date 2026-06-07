@@ -64,54 +64,62 @@ public partial class GameRoom
         ClearEvents();
         var result = new RoundResolutionResult();
 
-        // ============================================================
-        // 1단계: 모든 예약된 이동을 실제로 실행
-        // ============================================================
+        // RoundResolved의 레퍼런스로 사용 될 로컬 컬렉션
+        // RoundResolved를 기준으로 event 정보가 기록됨으로 하위 이벤트들은 로컬에서 관리
+        var moveExecutions = new List<MoveExecutionRecord>();
+        var arrivalRecords = new List<ArrivalRecord>();
+        var encounterRecords = new List<EncounterRecord>();
+        var ownershipChanges = new List<OwnershipChangeRecord>();
+        var resolvedEncounters = new List<EncounterResolvedRecord>();
+
+        // 1단계: 예약된 이동 일괄 실행
         foreach (var side in new[] { PlayerSide.A, PlayerSide.B })
         {
             foreach (var move in _pendingMoves[side])
             {
                 var sourceNode = Nodes[move.From];
 
-                // 이제 진짜로 유닛 차감
+                // 예약된 내용에 따라 유닛 차감
                 sourceNode.DepartMobileUnits(side, move.Count);
 
                 // 간선에 배치
                 var edgeId = new EdgeId(move.From, move.To);
                 Edges[edgeId].StartTravel(side, move.Count, move.To);
 
-                // 출발 이벤트 (이미 Planning에서 발행했지만, 
-                // Resolution에서도 실제 실행 기록으로 남김)
-                RecordMoveExecution(side, move.From, move.To, move.Count);
+                moveExecutions.Add(new MoveExecutionRecord(move.From, move.To, side, move.Count));
             }
         }
 
-        // ============================================================
         // 2단계: 모든 간선에서 1라운드 진행
-        // ============================================================
         var arrivals = ProcessAllEdgeAdvances();
 
-        // ============================================================
         // 3단계: 조우 확인
-        // ============================================================
         var encounters = FindAllEncounters();
 
         foreach (var enc in encounters)
         {
+            // edge 기본 정보 획득
             var edge = Edges[enc.EdgeId];
-            var encounterEvent = new EncounterOccurred(
-                RoomId, enc.EdgeId, edge.From, edge.To, enc.RemainingRounds,
-                new EncounterParticipantInfo(enc.GroupA.Side, enc.GroupA.UnitCount),
-                new EncounterParticipantInfo(enc.GroupB.Side, enc.GroupB.UnitCount),
-                CurrentRound
-            );
-            RecordEncounter(encounterEvent);
-            result.Encounters.Add(encounterEvent);
+
+
+            // 인카운트 이벤트 생성 
+            encounterRecords.Add(new EncounterRecord
+            {
+                EdgeId = enc.EdgeId.ToString(),
+                FromNode = edge.From.Value,
+                ToNode = edge.To.Value,
+                ParticipantAUnits = enc.GroupA.UnitCount,
+                ParticipantBUnits = enc.GroupB.UnitCount,
+                RemainingRounds = enc.RemainingRounds
+            });
+
+            // PendingEncounters에 등록 (다음 라운드에서 결정)
+            var groupA = enc.GroupA;
+            var groupB = enc.GroupB;
+            PendingEncounters.Add(new PendingEncounter(enc.EdgeId, groupA, groupB, enc.RemainingRounds));
         }
 
-        // ============================================================
         // 4단계: 조우 없는 유닛만 도착 처리
-        // ============================================================
         var blockedUnits = GetBlockedUnits(encounters);
 
         foreach (var arrival in arrivals)
@@ -123,46 +131,54 @@ public partial class GameRoom
 
                 node.ArriveMobileUnits(arrival.Side, arrival.Count);
 
-                RecordArrival(arrival.Destination, arrival.Side, arrival.Count, arrival.ViaEdge);
+                arrivalRecords.Add(new ArrivalRecord(arrival.Destination, arrival.Side, arrival.Count, arrival.ViaEdge));
 
                 if (node.Ownership != previousOwnership)
                 {
-                    RecordOwnershipChange(
-                        arrival.Destination, previousOwnership,
-                        node.Ownership, node.IsSupplyLine
-                    );
+                    ownershipChanges.Add(new OwnershipChangeRecord
+                    {
+                        NodeId = arrival.Destination.Value,
+                        PreviousOwner = previousOwnership.ToString(),
+                        NewOwner = node.Ownership.ToString(),
+                        IsSupplyLineActive = node.IsSupplyLine
+                    });
                 }
-
-                RaiseEvent(new UnitsArrived(
-                    RoomId, arrival.Destination, arrival.Side,
-                    arrival.Count, arrival.ViaEdge, CurrentRound, node.Ownership
-                ));
-
-                result.ArrivedUnits.Add(arrival);
             }
         }
 
-        // ============================================================
         // 5단계: 조우 Pending 등록
-        // ============================================================
-        foreach (var encEvent in _encounterEvents)
+        // 두 플레이 모두 결정을 진행한 경우
+        var newlyResolved = PendingEncounters.Where(p => p.BothDecided).ToList();
+
+        foreach (var pending in newlyResolved)
         {
-            var edge = Edges[encEvent.EdgeId];
-            var travelingGroups = edge.TravelingUnits[encEvent.RemainingRounds];
-
-            var groupA = travelingGroups.First(g => g.Side == PlayerSide.A);
-            var groupB = travelingGroups.First(g => g.Side == PlayerSide.B);
-
-            var pending = new PendingEncounter(
-                encEvent.EdgeId, groupA, groupB, encEvent.RemainingRounds
-            );
-            PendingEncounters.Add(pending);
-            result.PendingEncounters.Add(pending);
+            resolvedEncounters.Add(new EncounterResolvedRecord
+            {
+                EdgeId = pending.EdgeId.ToString(),
+                DecisionA = pending.DecisionA.ToString()!,
+                DecisionB = pending.DecisionB.ToString()!,
+                OutcomeAUnits = pending.OutcomeA?.UnitCount ?? 0,
+                OutcomeBUnits = pending.OutcomeB?.UnitCount ?? 0,
+                OutcomeADirection = pending.OutcomeA?.DestinationNode.ToString() ?? "",
+                OutcomeBDirection = pending.OutcomeB?.DestinationNode.ToString() ?? ""
+            });
         }
 
-        // ============================================================
-        // 6단계: 정리 및 다음 라운드 준비
-        // ============================================================
+        // 6단계: 노드 상태 스냅샷 생성
+        var nodeSnapshots = Nodes.Values.ToDictionary(
+            n => n.Id.Value,
+            n => new NodeStateSnapshot
+            {
+                NodeId = n.Id.Value,
+                Ownership = n.Ownership.ToString(),
+                PlayerAMobile = n.Units[PlayerSide.A].MobileCount,
+                PlayerAGarrison = n.Units[PlayerSide.A].GarrisonCount,
+                PlayerBMobile = n.Units[PlayerSide.B].MobileCount,
+                PlayerBGarrison = n.Units[PlayerSide.B].GarrisonCount
+            }
+        );
+
+        // 7단계: 정리 및 라운드 증가
         foreach (var node in Nodes.Values)
             node.ClearDepartureHistory();
 
@@ -175,15 +191,19 @@ public partial class GameRoom
         UnitUsedThisRound[PlayerSide.A] = 0;
         UnitUsedThisRound[PlayerSide.B] = 0;
 
-        // 라운드 해소 이벤트
+        // 8단계: 단일 RoundResolved 이벤트 발행
         RaiseEvent(new RoundResolved(
-            RoomId, completedRound, _arrivalRecords,
-            _encounterEvents, _ownershipChanges, _moveExecutionRecords
+            RoomId,
+            completedRound,
+            moveExecutions,
+            arrivalRecords,
+            encounterRecords,
+            ownershipChanges,
+            resolvedEncounters,
+            nodeSnapshots
         ));
 
-        // ============================================================
-        // 7단계: 게임 종료 체크
-        // ============================================================
+        // 9단계: 게임 종료 체크
         if (CheckGameOver() || CurrentRound > MaxRounds)
         {
             Phase = GamePhase.GameOver;
@@ -198,6 +218,7 @@ public partial class GameRoom
                 { PlayerSide.B, Nodes.Values.Count(n => n.Ownership == NodeOwnership.PlayerB) }
             };
 
+            // 게임 종료 시 
             RaiseEvent(new GameOver(RoomId, winner, reason, completedRound, scores));
             result.GameOver = true;
             result.Winner = winner;
@@ -232,8 +253,9 @@ public partial class GameRoom
 
         var sourceNode = Nodes[command.From];
 
-        // 출발지에 실제로 유닛이 충분한지 확인만 (차감은 아직 안 함)
-        int available = sourceNode.GetMobileCount(side);
+        // 출발지에 실제로 유닛이 충분한지 확인 (기존 예약된 이동 수 차감)
+        int alreadyCommitted = _pendingMoves[side].Where(m => m.From == command.From).Sum(m => m.Count);
+        int available = sourceNode.GetMobileCount(side) - alreadyCommitted;
 
         if (available < actualCount)
             throw new DomainException(

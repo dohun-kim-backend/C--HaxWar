@@ -53,35 +53,84 @@ public sealed record RoundStarted : DomainEvent
 /// </summary>
 public sealed record RoundResolved : DomainEvent
 {
-    /// <summary>완료된 라운드 번호</summary>
     public int CompletedRound { get; init; }
 
-    /// <summary>이 라운드에 도착한 유닛들</summary>
+    /// <summary>이번 라운드에 실행된 모든 이동</summary>
+    public IReadOnlyList<MoveExecutionRecord> MoveExecutions { get; init; }
+
+    /// <summary>도착한 유닛들</summary>
     public IReadOnlyList<ArrivalRecord> Arrivals { get; init; }
 
-    /// <summary>발생한 조우 목록</summary>
-    public IReadOnlyList<EncounterOccurred> Encounters { get; init; }
+    /// <summary>발생한 조우</summary>
+    public IReadOnlyList<EncounterRecord> Encounters { get; init; }
 
-    /// <summary>변경된 노드 점유 상태</summary>
-    public IReadOnlyList<NodeOwnershipChanged> OwnershipChanges { get; init; }
+    /// <summary>변경된 점유권</summary>
+    public IReadOnlyList<OwnershipChangeRecord> OwnershipChanges { get; init; }
 
-    public IReadOnlyList<MoveExecutionRecord> MoveExecutions { get; init; }
+    /// <summary>해소된 조우 결과 (조우가 있었던 경우)</summary>
+    public IReadOnlyList<EncounterResolvedRecord> ResolvedEncounters { get; init; }
+
+    /// <summary>라운드 종료 시점의 모든 노드 스냅샷</summary>
+    public IReadOnlyDictionary<int, NodeStateSnapshot> NodeSnapshots { get; init; }
 
     public RoundResolved(
         string roomId,
         int completedRound,
+        IEnumerable<MoveExecutionRecord> moveExecutions,
         IEnumerable<ArrivalRecord> arrivals,
-        IEnumerable<EncounterOccurred> encounters,
-        IEnumerable<NodeOwnershipChanged> ownershipChanges,
-        IEnumerable<MoveExecutionRecord> moveExecutions)  // ← 추가
+        IEnumerable<EncounterRecord> encounters,
+        IEnumerable<OwnershipChangeRecord> ownershipChanges,
+        IEnumerable<EncounterResolvedRecord> resolvedEncounters,
+        Dictionary<int, NodeStateSnapshot> nodeSnapshots)
         : base(roomId)
     {
         CompletedRound = completedRound;
+        MoveExecutions = moveExecutions.ToList().AsReadOnly();
         Arrivals = arrivals.ToList().AsReadOnly();
         Encounters = encounters.ToList().AsReadOnly();
         OwnershipChanges = ownershipChanges.ToList().AsReadOnly();
-        MoveExecutions = moveExecutions.ToList().AsReadOnly();
+        ResolvedEncounters = resolvedEncounters.ToList().AsReadOnly();
+        NodeSnapshots = nodeSnapshots.AsReadOnly();
     }
+}
+
+public sealed record EncounterRecord
+{
+    public string EdgeId { get; init; } = string.Empty;
+    public int FromNode { get; init; }
+    public int ToNode { get; init; }
+    public int ParticipantAUnits { get; init; }
+    public int ParticipantBUnits { get; init; }
+    public int RemainingRounds { get; init; }
+}
+
+public sealed record OwnershipChangeRecord
+{
+    public int NodeId { get; init; }
+    public string PreviousOwner { get; init; } = string.Empty;
+    public string NewOwner { get; init; } = string.Empty;
+    public bool IsSupplyLineActive { get; init; }
+}
+
+public sealed record EncounterResolvedRecord
+{
+    public string EdgeId { get; init; } = string.Empty;
+    public string DecisionA { get; init; } = string.Empty;
+    public string DecisionB { get; init; } = string.Empty;
+    public int OutcomeAUnits { get; init; }
+    public int OutcomeBUnits { get; init; }
+    public string OutcomeADirection { get; init; } = string.Empty;
+    public string OutcomeBDirection { get; init; } = string.Empty;
+}
+
+public sealed record NodeStateSnapshot
+{
+    public int NodeId { get; init; }
+    public string Ownership { get; init; } = string.Empty;
+    public int PlayerAMobile { get; init; }
+    public int PlayerAGarrison { get; init; }
+    public int PlayerBMobile { get; init; }
+    public int PlayerBGarrison { get; init; }
 }
 
 /// <summary>
