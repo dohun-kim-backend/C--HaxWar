@@ -3,6 +3,12 @@
   <ItemGroup>
     <ProjectReference Include="..\HexWar.Infrastructure\HexWar.Infrastructure.csproj" />
     <ProjectReference Include="..\HexWar.Application\HexWar.Application.csproj" />
+    <ProjectReference Include="..\HexWar.Matchmaking\HexWar.Matchmaking.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore.Server.Reflection" Version="2.80.0" />
+    <PackageReference Include="Grpc.AspNetCore.Web" Version="2.80.0" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -10,5 +16,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="..\HexWar.Client\wwwroot\**\*">
+      <Link>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 
 </Project>
