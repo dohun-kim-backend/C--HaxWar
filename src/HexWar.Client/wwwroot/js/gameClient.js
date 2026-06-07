@@ -14,6 +14,11 @@ class GameClient {
         this.onGameOver = null;
         this.onLog = null;
         this.onConnectionChange = null;
+        
+        // 재연결 및 시퀀스 보정 상태
+        this.lastSeenSequence = 0;
+        this.reconnectTimeout = null;
+        this.isClosedIntentionally = false;
     }
 
     /**
@@ -59,23 +64,56 @@ class GameClient {
      * WebSocket 연결
      */
     connect() {
+        if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+        }
+        
+        this.isClosedIntentionally = false;
+        
         const wsUrl = `ws://${window.location.host}/ws/game/${this.roomId}/${this.playerSide}`;
         this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {
             this.log('서버 연결됨');
             if (this.onConnectionChange) this.onConnectionChange(true);
-            this.send({ type: 'get_state' });
+            
+            // 재연결 시 누락된 이벤트 동기화 요청
+            if (this.lastSeenSequence > 0) {
+                this.log(`누락된 이벤트 동기화 요청 (마지막 시퀀스: ${this.lastSeenSequence})`);
+                this.send({
+                    type: 'reconnect_sync',
+                    payload: {
+                        last_seen_sequence: this.lastSeenSequence
+                    }
+                });
+            } else {
+                this.send({ type: 'get_state' });
+            }
         };
 
         this.ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
+            
+            // 시퀀스 번호 추적
+            if (message.sequence) {
+                this.lastSeenSequence = Math.max(this.lastSeenSequence, message.sequence);
+            }
+            
             this.handleMessage(message);
         };
 
         this.ws.onclose = () => {
             this.log('서버 연결 끊김');
             if (this.onConnectionChange) this.onConnectionChange(false);
+            
+            // 의도적으로 종료한 것이 아닐 때만 재연결 시도
+            if (!this.isClosedIntentionally) {
+                this.reconnectTimeout = setTimeout(() => {
+                    this.log('서버 재연결 시도 중...');
+                    this.connect();
+                }, 3000);
+            }
         };
 
         this.ws.onerror = (error) => {
@@ -206,6 +244,11 @@ class GameClient {
     }
 
     disconnect() {
+        this.isClosedIntentionally = true;
+        if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+        }
         if (this.ws) {
             this.ws.close();
         }

@@ -20,10 +20,10 @@ using NUnit.Framework;
 
 public class DummyBroadcaster : IEventBroadcaster
 {
-    public Task BroadcastToRoomAsync(string roomId, IDomainEvent domainEvent) => Task.CompletedTask;
-    public Task BroadcastToRoomAsync<T>(string roomId, T message) where T : class => Task.CompletedTask;
-    public Task SendToPlayerAsync(string roomId, PlayerSide side, IDomainEvent domainEvent) => Task.CompletedTask;
-    public Task SendToPlayerAsync<T>(string roomId, PlayerSide side, T message) where T : class => Task.CompletedTask;
+    public Task BroadcastToRoomAsync(string roomId, IDomainEvent domainEvent, long sequenceNumber = 0) => Task.CompletedTask;
+    public Task BroadcastToRoomAsync<T>(string roomId, T message, long sequenceNumber = 0) where T : class => Task.CompletedTask;
+    public Task SendToPlayerAsync(string roomId, PlayerSide side, IDomainEvent domainEvent, long sequenceNumber = 0) => Task.CompletedTask;
+    public Task SendToPlayerAsync<T>(string roomId, PlayerSide side, T message, long sequenceNumber = 0) where T : class => Task.CompletedTask;
 }
 
 [TestFixture]
