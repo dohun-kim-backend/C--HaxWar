@@ -3,6 +3,7 @@ using HexWar.Application.Sessions;
 using HexWar.Infrastructure.Persistence;
 using HexWar.Infrastructure.WebSocket;
 using HexWar.Matchmaking.Services;
+using HexWar.Server.BackgroundServices;
 using HexWar.Server.WebSocket;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -39,6 +40,12 @@ builder.Services.AddSingleton<MatchmakingService>();
 // gRPC 서비스
 builder.Services.AddGrpc();
 builder.Services.AddGrpcReflection();
+
+// 정리 백그라운드 서비스 등록
+builder.Services.AddHostedService<SessionCleanupService>();
+
+// 서비스 상태 확인용 HealthCheck
+builder.Services.AddControllers();
 
 var app = builder.Build();
 
@@ -77,5 +84,7 @@ if (app.Environment.IsDevelopment())
 {
     app.MapGrpcReflectionService();
 }
+
+app.MapControllers();
 
 app.Run();

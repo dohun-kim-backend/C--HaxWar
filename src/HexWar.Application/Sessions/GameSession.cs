@@ -44,7 +44,13 @@ public class GameSession : IDisposable
     internal GameRoom GetGameRoom() => _gameRoom;
 
     // 동일한 프로젝트 내에서만 접근을 허용하기위한 키워드
-    internal DateTime? LastActivityAt { get; private set; }
+    public DateTime? LastActivityAt { get; private set; }
+
+    public TimeSpan LastActivityElapsed => LastActivityAt.HasValue
+        ? DateTime.UtcNow - LastActivityAt.Value
+        : TimeSpan.Zero;
+
+    public int ConnectedPlayerCount => _playerStates.Values.Count(p => p.IsConnected);
 
     // 이벤트 버퍼 [ 재연결 시 시퀀스 번호에 따라 보정 처리 ]
     private readonly CircularBuffer<BufferedEvent> _eventBuffer = new(200);
@@ -66,6 +72,8 @@ public class GameSession : IDisposable
             { PlayerSide.A, new PlayerSessionState(PlayerSide.A) },
             { PlayerSide.B, new PlayerSessionState(PlayerSide.B) }
         };
+
+        LastActivityAt = DateTime.UtcNow;
     }
 
     // 연결 관리
@@ -76,6 +84,7 @@ public class GameSession : IDisposable
         {
             _playerStates[side].IsConnected = true;
             _playerStates[side].MarkActivity();
+            LastActivityAt = DateTime.UtcNow;
 
             // 첫 번째 라운드이고 계획 단계일 때 양쪽 플레이어가 모두 연결되면 계획 타이머 시작
             if (_gameRoom.Phase == GamePhase.Planning && _planningTimer == null)
@@ -101,6 +110,7 @@ public class GameSession : IDisposable
         {
             _playerStates[side].IsConnected = false;
             _playerStates[side].MarkActivity();
+            LastActivityAt = DateTime.UtcNow;
 
             // 15초 유예 후에도 연결이 끊겨있으면 게임 종료
             _ = Task.Run(async () =>
@@ -124,6 +134,7 @@ public class GameSession : IDisposable
         await _lock.WaitAsync();
         try
         {
+            LastActivityAt = DateTime.UtcNow;
             // 1차: 연결 확인
             if (!_playerStates[side].IsConnected)
                 return MoveUnitsCommandResult.Fail("Not connected", "NOT_CONNECTED");
@@ -175,6 +186,7 @@ public class GameSession : IDisposable
         await _lock.WaitAsync();
         try
         {
+            LastActivityAt = DateTime.UtcNow;
             if (!_playerStates[side].IsConnected)
                 return EncounterDecisionCommandResult.Fail("Not connected", "NOT_CONNECTED");
 

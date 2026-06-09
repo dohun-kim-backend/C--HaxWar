@@ -28,6 +28,81 @@ public class ConnectionManager
         }
     }
 
+    public int GetTotalConnectionCount()
+    {
+        return _connections.Count(kvp => kvp.Value.State == WebSocketState.Open);
+    }
+
+    public async Task CleanupRoomAsync(string roomId)
+    {
+        var roomKeys = _connections.Keys
+            .Where(k => k.RoomId == roomId)
+            .ToList();
+
+        var closeTasks = new List<Task>();
+
+        foreach (var key in roomKeys)
+        {
+            if (_connections.TryGetValue(key, out var socket))
+            {
+                try
+                {
+                    if (socket.State == WebSocketState.Open || socket.State == WebSocketState.CloseReceived)
+                    {
+                        // 정상 종료 시도
+                        closeTasks.Add(socket.CloseAsync(
+                            WebSocketCloseStatus.NormalClosure,
+                            "Room closed by server",
+                            CancellationToken.None));
+                    }
+                    else if (socket.State == WebSocketState.Aborted)
+                    {
+                        // 이미 비정상 종료됨 → 바로 제거
+                        _connections.TryRemove(key, out _);
+                    }
+                }
+                catch
+                {
+                    // 소켓이 이미 망가진 경우 강제 제거
+                    _connections.TryRemove(key, out _);
+                }
+            }
+        }
+
+        // 모든 CloseAsync가 완료될 때까지 대기 (최대 3초)
+        if (closeTasks.Any())
+        {
+            var timeout = Task.Delay(3000);
+            var completed = await Task.WhenAny(Task.WhenAll(closeTasks), timeout);
+
+            if (completed == timeout)
+            {
+                Console.WriteLine("Timeout closing some connections for room " + roomId);
+            }
+        }
+
+        // 남은 연결 강제 제거
+        foreach (var key in roomKeys)
+        {
+            _connections.TryRemove(key, out _);
+        }
+    }
+
+    public int CleanupStaleConnections()
+    {
+        var staleKeys = _connections
+            .Where(kvp => kvp.Value.State != WebSocketState.Open && kvp.Value.State != WebSocketState.Connecting)
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        foreach (var key in staleKeys)
+        {
+            _connections.TryRemove(key, out _);
+        }
+
+        return staleKeys.Count;
+    }
+
     // 소켓을 기준으로 역뱡향 조회를 진행하여 사용자 정보 획득
     // SessionRegistry에 전달하여 PlayerSessionState 매핑
     public (string RoomId, string PlayerSide)? GetConnectionInfo(System.Net.WebSockets.WebSocket socket)
@@ -99,23 +174,23 @@ public class ConnectionManager
     }
 
     // 방의 모든 연결을 정리합니다.
-    public async Task CleanupRoomAsync(string roomId)
-    {
-        var connections = GetRoomConnections(roomId);
-        foreach (var socket in connections)
-        {
-            try
-            {
-                if (socket.State == WebSocketState.Open)
-                {
-                    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Room closed", CancellationToken.None);
-                }
-            }
-            catch { }
-            // 메모리에 등록된 연결 정보 삭제
-            RemoveConnection(socket);
-        }
-    }
+    // public async Task CleanupRoomAsync(string roomId)
+    // {
+    //     var connections = GetRoomConnections(roomId);
+    //     foreach (var socket in connections)
+    //     {
+    //         try
+    //         {
+    //             if (socket.State == WebSocketState.Open)
+    //             {
+    //                 await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Room closed", CancellationToken.None);
+    //             }
+    //         }
+    //         catch { }
+    //         // 메모리에 등록된 연결 정보 삭제
+    //         RemoveConnection(socket);
+    //     }
+    // }
 
 
 }
