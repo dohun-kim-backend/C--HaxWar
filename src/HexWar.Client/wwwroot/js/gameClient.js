@@ -14,6 +14,7 @@ class GameClient {
         this.onGameOver = null;
         this.onLog = null;
         this.onConnectionChange = null;
+        this.onGameEvent = null; // 실시간 이벤트 처리용
         
         // 재연결 및 시퀀스 보정 상태
         this.lastSeenSequence = 0;
@@ -134,6 +135,9 @@ class GameClient {
 
             case 'game_event':
                 this.handleGameEvent(message);
+                if (this.onGameEvent) {
+                    this.onGameEvent(message);
+                }
                 break;
 
             case 'error':
@@ -147,7 +151,7 @@ class GameClient {
     }
 
     handleGameEvent(message) {
-        const eventType = message.eventType;
+        const eventType = message.eventType || message.event_type;
         const payload = message.payload;
 
         switch (eventType) {
@@ -156,15 +160,23 @@ class GameClient {
                 break;
 
             case 'RoundStarted':
-                this.log(`📍 라운드 ${message.round} 시작 - 계획 단계`);
+                this.log(`📍 라운드 ${message.round || payload?.roundNumber} 시작 - 계획 단계`);
                 break;
 
             case 'UnitsDeparted':
-                this.log(`🚀 ${payload.side}측 ${payload.fromNode.value}번 노드에서 ${payload.unitCount}기 출발`);
+            case 'UnitsDepartedPublicInfo':
+                {
+                    const fromNodeVal = payload.fromNode?.value ?? payload.fromNode;
+                    this.log(`🚀 ${payload.side}측 ${fromNodeVal}번 노드에서 ${payload.unitCount}기 출발`);
+                }
                 break;
 
             case 'UnitsArrived':
-                this.log(`✅ ${payload.side}측 유닛 ${payload.unitCount}기 ${payload.destinationNode.value}번 노드 도착`);
+            case 'UnitsArrivedSummary':
+                {
+                    const destNodeVal = payload.destinationNode?.value ?? payload.destinationNode;
+                    this.log(`✅ ${payload.side}측 유닛 ${payload.unitCount}기 ${destNodeVal}번 노드 도착`);
+                }
                 break;
 
             case 'EncounterOccurred':

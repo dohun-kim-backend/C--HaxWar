@@ -485,6 +485,140 @@ body {
     cursor: pointer;
 }
 
+/* 실시간 전장 브로드캐스트 영역 */
+#broadcast-list {
+    max-height: 250px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-right: 4px;
+    margin-top: 8px;
+}
+
+/* 스크롤바 디자인 */
+#broadcast-list::-webkit-scrollbar {
+    width: 6px;
+}
+#broadcast-list::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 3px;
+}
+#broadcast-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+#broadcast-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.broadcast-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-left: 4px solid #9ca3af; /* Default color: gray */
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: #e0e0e0;
+    animation: slideIn 0.25s ease-out;
+    transition: transform 0.2s, background-color 0.2s;
+    backdrop-filter: blur(4px);
+}
+
+.broadcast-card:hover {
+    background: rgba(255, 255, 255, 0.06);
+    transform: translateX(2px);
+}
+
+/* 진영별/이벤트별 테두리 포인트 색상 */
+.broadcast-card.side-a {
+    border-left-color: #3b82f6; /* Player A: Blue */
+}
+
+.broadcast-card.side-b {
+    border-left-color: #ef4444; /* Player B: Red */
+}
+
+.broadcast-card.system {
+    border-left-color: #8b5cf6; /* System: Purple */
+}
+
+.broadcast-card.alert {
+    border-left-color: #f59e0b; /* Alert/Encounter: Gold */
+    background: rgba(245, 158, 11, 0.04);
+    border-color: rgba(245, 158, 11, 0.15);
+}
+
+.broadcast-card.success {
+    border-left-color: #10b981; /* Success: Green */
+    background: rgba(16, 185, 129, 0.03);
+}
+
+.broadcast-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+    font-size: 11px;
+    font-weight: bold;
+    color: #888;
+}
+
+.broadcast-time {
+    font-weight: normal;
+    color: #555;
+    font-size: 10px;
+}
+
+.broadcast-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+
+.broadcast-body {
+    font-size: 12px;
+    color: #ccc;
+}
+
+.broadcast-sub-list {
+    margin-top: 6px;
+    padding-left: 10px;
+    border-left: 1px dashed rgba(255, 255, 255, 0.1);
+    font-size: 11px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    color: #aaa;
+}
+
+.broadcast-sub-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.broadcast-placeholder {
+    font-size: 12px;
+    color: #666;
+    text-align: center;
+    padding: 20px 0;
+    border: 1px dashed rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 /* 반응형 */
 @media (max-width: 768px) {
     .main-area {

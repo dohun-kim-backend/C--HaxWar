@@ -9,6 +9,7 @@ class GameUI {
         this.renderer = null;
         this.stateView = null;
         this.selectedFrom = null;
+        this.selectedTo = null; // 선택된 목적지 노드
         this.selectedUnits = 0;
         this.pendingMoves = [];
         this.encounterData = null;
@@ -33,6 +34,7 @@ class GameUI {
         this.client.onGameOver = (data) => this.handleGameOver(data);
         this.client.onLog = (msg) => this.addLog(msg);
         this.client.onConnectionChange = (connected) => this.updateConnectionStatus(connected);
+        this.client.onGameEvent = (message) => this.handleBroadcastEvent(message);
 
         // 노드 클릭 핸들러
         this.renderer.onNodeClick = (nodeId) => this.handleNodeClick(nodeId);
@@ -44,6 +46,11 @@ class GameUI {
                 btn.classList.add('selected');
                 this.selectedUnits = parseInt(btn.dataset.count);
                 this.updateMoveButton();
+
+                // 만약 출발지와 목적지가 모두 이미 선택된 상태라면 즉시 이동 실행
+                if (this.selectedFrom && this.selectedTo && this.selectedUnits > 0) {
+                    this.executeMoveTo(this.selectedTo);
+                }
             });
         });
 
@@ -282,7 +289,7 @@ class GameUI {
 
             // 유닛 선택 버튼 업데이트 (출발지의 모바일 유닛 수와 내 전체 남은 유닛 수 중 최소값 기준으로 비활성화)
             const remaining = this.stateView.myRemainingUnits || 0;
-            const maxSelectable = Math.Min(remaining, availableOnNode);
+            const maxSelectable = Math.min(remaining, availableOnNode);
 
             document.querySelectorAll('.unit-btn').forEach(btn => {
                 const btnCount = parseInt(btn.dataset.count);
@@ -298,7 +305,15 @@ class GameUI {
                 }
             });
 
-            if (this.selectedUnits > maxSelectable) {
+            // 기본값으로 1기 선택 (1기가 비활성화되지 않았고 현재 선택된 유닛이 없거나 부적절할 때)
+            if (maxSelectable >= 1 && (this.selectedUnits <= 0 || this.selectedUnits > maxSelectable)) {
+                const btn1 = Array.from(document.querySelectorAll('.unit-btn')).find(b => parseInt(b.dataset.count) === 1);
+                if (btn1 && !btn1.disabled) {
+                    document.querySelectorAll('.unit-btn').forEach(b => b.classList.remove('selected'));
+                    btn1.classList.add('selected');
+                    this.selectedUnits = 1;
+                }
+            } else if (this.selectedUnits > maxSelectable) {
                 this.selectedUnits = 0;
                 document.querySelectorAll('.unit-btn').forEach(b => b.classList.remove('selected'));
             }
@@ -307,6 +322,7 @@ class GameUI {
         } else if (this.selectedFrom === nodeId) {
             // 선택 취소
             this.selectedFrom = null;
+            this.selectedTo = null;
             this.renderer.selectNode(null);
             this.renderer.resetHighlight();
             document.getElementById('selected-from').textContent = '-';
@@ -328,19 +344,19 @@ class GameUI {
                 }
             });
 
-            if (this.selectedUnits > remaining) {
-                this.selectedUnits = 0;
-                document.querySelectorAll('.unit-btn').forEach(b => b.classList.remove('selected'));
-            }
-
+            this.selectedUnits = 0;
+            document.querySelectorAll('.unit-btn').forEach(b => b.classList.remove('selected'));
             this.updateMoveButton();
         } else {
-            // 목적지 선택 → 이동 실행
+            // 목적지 선택
+            this.selectedTo = nodeId;
             document.getElementById('selected-to').textContent =
                 GameRenderer.NODE_POSITIONS[nodeId].name;
 
             if (this.selectedUnits > 0) {
                 this.executeMoveTo(nodeId);
+            } else {
+                this.updateMoveButton();
             }
         }
     }
@@ -375,6 +391,7 @@ class GameUI {
 
         // UI 초기화
         this.selectedFrom = null;
+        this.selectedTo = null;
         this.selectedUnits = 0;
         this.renderer.selectNode(null);
         this.renderer.resetHighlight();
@@ -385,7 +402,9 @@ class GameUI {
     }
 
     executeMove() {
-        // 버튼 클릭으로는 실행 안 함 (노드 클릭으로 목적지 선택)
+        if (this.selectedFrom && this.selectedTo && this.selectedUnits > 0) {
+            this.executeMoveTo(this.selectedTo);
+        }
     }
 
     handleEncounter(data) {
@@ -529,6 +548,199 @@ class GameUI {
         const status = document.getElementById('connection-status');
         status.textContent = connected ? '🟢 연결됨' : '🔴 연결 끊김';
         status.style.color = connected ? '#4CAF50' : '#f44336';
+    }
+
+    handleBroadcastEvent(message) {
+        const eventType = message.eventType || message.event_type;
+        const payload = message.payload;
+        const round = message.round || this.stateView?.currentRound || 0;
+
+        const broadcastList = document.getElementById('broadcast-list');
+        if (!broadcastList) return;
+
+        // 플레이스홀더가 존재하면 제거
+        const placeholder = broadcastList.querySelector('.broadcast-placeholder');
+        if (placeholder) {
+            placeholder.remove();
+        }
+
+        const card = document.createElement('div');
+        card.className = 'broadcast-card';
+
+        const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        let headerText = `라운드 ${round}`;
+        let title = '';
+        let body = '';
+        let cardType = 'system'; // 'side-a', 'side-b', 'system', 'alert', 'success'
+
+        const getNodeName = (nodeId) => {
+            const id = nodeId?.value ?? nodeId;
+            return GameRenderer.NODE_POSITIONS[id]?.name || `노드 ${id}`;
+        };
+
+        const getPlayerLabel = (side) => {
+            if (side === 'A') return '🔵 Player A';
+            if (side === 'B') return '🔴 Player B';
+            return side;
+        };
+
+        switch (eventType) {
+            case 'GameStarted':
+                title = '🎮 게임 시작';
+                body = `전투가 시작되었습니다. 사령부를 방어하고 전장을 지배하십시오!`;
+                cardType = 'system';
+                break;
+
+            case 'RoundStarted':
+                title = `📍 라운드 ${round} 시작`;
+                body = `새로운 계획 단계가 시작되었습니다. 이동 명령을 설정하세요.`;
+                cardType = 'system';
+                break;
+
+            case 'UnitsDeparted':
+            case 'UnitsDepartedPublicInfo':
+                {
+                    const side = payload.side;
+                    const fromNodeName = getNodeName(payload.fromNode);
+                    const unitCount = payload.unitCount;
+                    const isEnemy = side !== this.client.playerSide;
+
+                    cardType = side === 'A' ? 'side-a' : 'side-b';
+                    if (isEnemy) {
+                        title = `⚠️ 적군 감지 (${getPlayerLabel(side)})`;
+                        body = `<strong style="color: #ef4444;">${fromNodeName}</strong>에서 유닛 <span style="font-weight:bold; color:#ef4444;">${unitCount}기</span>가 이동을 시작했습니다! (행선지 미확인)`;
+                    } else {
+                        title = `🚀 아군 이동 시작 (${getPlayerLabel(side)})`;
+                        body = `<strong>${fromNodeName}</strong>에서 유닛 <span style="font-weight:bold; color:#3b82f6;">${unitCount}기</span>가 출발했습니다.`;
+                    }
+                }
+                break;
+
+            case 'EncounterOccurred':
+                {
+                    const nodeA = getNodeName(payload.fromNode);
+                    const nodeB = getNodeName(payload.toNode);
+                    title = `⚔️ 간선 조우 발생!`;
+                    body = `경로 (<strong>${nodeA} ↔ ${nodeB}</strong>)에서 서로의 유닛이 맞닥뜨렸습니다! 각 진영은 진격 또는 복귀를 결정해야 합니다.`;
+                    cardType = 'alert';
+                }
+                break;
+
+            case 'EncounterResolved':
+                {
+                    title = `🔨 조우 해소 완료`;
+                    const decisionA = payload.decisionA === 'Advance' ? '⚔️ 진격' : '🏃 복귀';
+                    const decisionB = payload.decisionB === 'Advance' ? '⚔️ 진격' : '🏃 복귀';
+                    body = `조우 판단 결과: Player A (${decisionA}) vs Player B (${decisionB})`;
+                    cardType = 'alert';
+                }
+                break;
+
+            case 'RoundResolved':
+                {
+                    title = `🔄 라운드 ${payload.completedRound} 결과 해소`;
+                    body = `라운드 해소가 완료되었습니다. 세부 변화:`;
+                    cardType = 'success';
+
+                    const subList = document.createElement('div');
+                    subList.className = 'broadcast-sub-list';
+
+                    // 1. 유닛 이동 결과 요약
+                    if (payload.arrivals && payload.arrivals.length > 0) {
+                        payload.arrivals.forEach(arr => {
+                            const item = document.createElement('div');
+                            item.className = 'broadcast-sub-item';
+                            const sideColor = arr.side === 'A' ? '#3b82f6' : '#ef4444';
+                            item.innerHTML = `
+                                <span>✔</span>
+                                <span><strong style="color: ${sideColor}">${getPlayerLabel(arr.side)}</strong> 유닛 ${arr.unitCount}기 ➔ <strong>${getNodeName(arr.destinationNodeId)}</strong> 도착</span>
+                            `;
+                            subList.appendChild(item);
+                        });
+                    }
+
+                    // 2. 조우 결과 요약
+                    if (payload.resolvedEncounters && payload.resolvedEncounters.length > 0) {
+                        payload.resolvedEncounters.forEach(enc => {
+                            const item = document.createElement('div');
+                            item.className = 'broadcast-sub-item';
+                            item.innerHTML = `
+                                <span>💥</span>
+                                <span>결과: A(${enc.decisionA === 'Advance' ? '진격' : '후퇴'}, ${enc.outcomeAUnits}기 생존) vs B(${enc.decisionB === 'Advance' ? '진격' : '후퇴'}, ${enc.outcomeBUnits}기 생존)</span>
+                            `;
+                            subList.appendChild(item);
+                        });
+                    }
+
+                    // 3. 노드 소유권 변경 요약
+                    if (payload.ownershipChanges && payload.ownershipChanges.length > 0) {
+                        payload.ownershipChanges.forEach(change => {
+                            const item = document.createElement('div');
+                            item.className = 'broadcast-sub-item';
+                            const newOwnerLabel = change.newOwner === 'PlayerA' ? 'A' : change.newOwner === 'PlayerB' ? 'B' : '중립';
+                            const ownerColor = change.newOwner === 'PlayerA' ? '#3b82f6' : change.newOwner === 'PlayerB' ? '#ef4444' : '#888';
+                            item.innerHTML = `
+                                <span>🚩</span>
+                                <span><strong>${getNodeName(change.nodeId)}</strong> 소유권 변경: <strong style="color: ${ownerColor}">${newOwnerLabel}</strong> 점령 ${change.isSupplyLineActive ? '(보급 가동)' : ''}</span>
+                            `;
+                            subList.appendChild(item);
+                        });
+                    }
+
+                    if (subList.children.length === 0) {
+                        const item = document.createElement('div');
+                        item.className = 'broadcast-sub-item';
+                        item.textContent = '이번 라운드에 발생한 특이 변화가 없습니다.';
+                        subList.appendChild(item);
+                    }
+
+                    card.appendChild(subList);
+                }
+                break;
+
+            case 'GameOver':
+                {
+                    const winner = payload.winner;
+                    title = `🏆 게임 종료`;
+                    body = winner 
+                        ? `최종 승자: <strong style="${winner === 'A' ? 'color: #3b82f6;' : 'color: #ef4444;'}">${getPlayerLabel(winner)}</strong> (${payload.reason})`
+                        : `무승부로 종료되었습니다. (${payload.reason})`;
+                    cardType = 'system';
+                }
+                break;
+
+            default:
+                return;
+        }
+
+        // 공통 카드 구조 구성
+        card.className = `broadcast-card ${cardType}`;
+        
+        const header = document.createElement('div');
+        header.className = 'broadcast-header';
+        header.innerHTML = `
+            <span>${headerText}</span>
+            <span class="broadcast-time">${timeString}</span>
+        `;
+        card.insertBefore(header, card.firstChild);
+
+        const cardContent = document.createElement('div');
+        cardContent.innerHTML = `
+            <div class="broadcast-title">${title}</div>
+            <div class="broadcast-body">${body}</div>
+        `;
+        if (eventType === 'RoundResolved') {
+            card.insertBefore(cardContent, card.childNodes[1]);
+        } else {
+            card.appendChild(cardContent);
+        }
+
+        broadcastList.insertBefore(card, broadcastList.firstChild);
+
+        // 최대 30개 유지
+        while (broadcastList.children.length > 30) {
+            broadcastList.removeChild(broadcastList.lastChild);
+        }
     }
 }
 
