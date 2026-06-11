@@ -4,6 +4,9 @@
 
 플레이어는 노드와 간선으로 이루어진 전장에서 유닛을 이동하고, 보급로를 활성화하며, 본부(HQ) 시야를 확보하여 정보 비대칭 우위를 점해야 합니다. 양 플레이어가 동시에 명령을 내리고 일괄 해소되는 시스템, 간선 위에서 발생하는 조우(Encounter) 심리전 등 독창적인 도메인 규칙을 정교하게 제어합니다.
 
+### 인게임 플레이 화면
+![HexWar 인게임 스크린샷](game_screenshot.png)
+
 ---
 
 ## 주요 아키텍처 및 핵심 기능
@@ -18,6 +21,41 @@
 ## 전체적 게임 흐름
 
 ![전체적 게임 흐름도](sequence_diagram.png)
+
+---
+
+## 💻 플랫폼 호환성 및 실행 방법
+
+### 1. 플랫폼 호환성 (Cross-Platform)
+본 프로젝트는 **.NET 9.0** 기반으로 작성되어 OS에 의존적인 네이티브 API 또는 하드코딩된 구분자 경로를 사용하지 않습니다. 따라서 **Windows, Linux, macOS(Apple Silicon 포함)** 환경 모두에서 소스코드 수정 없이 빌드 및 실행이 가능합니다.
+
+- **C# gRPC 빌드 도구**: OS 플랫폼에 관계없이 컴파일 과정에서 `matchmaking.proto`가 자동 컴파일되도록 호환 도구가 내장되어 있습니다.
+- **크로스 플랫폼 경로 자동 변환**: `Path.Combine` 및 MSBuild의 경로 정규화 기능을 활용하여 각 운영체제의 디렉토리 구분자(`\` 또는 `/`)에 맞춰 유연하게 경로를 결정합니다.
+
+### 2. 빌드 및 실행 방법
+프로젝트 루트 폴더에서 아래 닷넷 명령어로 서버 및 클라이언트를 즉시 구동할 수 있습니다.
+
+#### 요구 사양
+* [.NET SDK 9.0](https://dotnet.microsoft.com/download/dotnet/9.0) 이상 설치 필요
+
+#### 로컬 구동 명령어
+```bash
+# 1. 의존성 복원 및 빌드 테스트
+dotnet build
+
+# 2. 게임 서버 구동 (HexWar.Server에서 클라이언트 정적 리소스 서빙 포함)
+dotnet run --project src/HexWar.Server/HexWar.Server.csproj
+```
+
+#### Docker 구동 명령어
+본 저장소에는 멀티 스테이지 최적화가 적용된 Dockerfile이 탑재되어 있습니다.
+```bash
+# 이미지 빌드
+docker build -t hexwar-server -f src/HexWar.Server/Dockerfile .
+
+# 컨테이너 백그라운드 구동
+docker run -d -p 5051:5051 --name hexwar-game hexwar-server
+```
 
 # 기술적 도전 및 최적화
 
