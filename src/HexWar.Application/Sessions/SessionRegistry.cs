@@ -3,6 +3,7 @@ namespace HexWar.Application.Sessions;
 using System.Collections.Concurrent;
 using HexWar.Application.Services;
 using HexWar.Domain.Entities;
+using Microsoft.Extensions.Logging;
 
 // 모든 활성 게임 세션을 관리
 public class SessionRegistry
@@ -10,11 +11,19 @@ public class SessionRegistry
     private readonly ConcurrentDictionary<string, GameSession> _sessions = new();
     private readonly IGameRoomRepository _repository;
     private readonly IEventBroadcaster _eventBroadcaster;
+    private readonly IGameEventPublisher? _eventPublisher;
+    private readonly ILogger<GameSession>? _logger;
 
-    public SessionRegistry(IGameRoomRepository repository, IEventBroadcaster eventBroadcaster)
+    public SessionRegistry(
+        IGameRoomRepository repository,
+        IEventBroadcaster eventBroadcaster,
+        IGameEventPublisher? eventPublisher = null,
+        ILogger<GameSession>? logger = null)
     {
         _repository = repository;
         _eventBroadcaster = eventBroadcaster;
+        _eventPublisher = eventPublisher;
+        _logger = logger;
     }
 
     // 새로운 게임 세션 생성
@@ -26,7 +35,7 @@ public class SessionRegistry
         var gameRoom = new GameRoom(roomId);
         gameRoom.InitializeMap();
 
-        var session = new GameSession(gameRoom, _eventBroadcaster, _repository);
+        var session = new GameSession(gameRoom, _eventBroadcaster, _repository, _eventPublisher, _logger);
 
         // 종료 시 등록할 이벤트 핸들러 - 게임 종료 후 1분 뒤 메모리에서 제거 
         session.OnGameOver += async (s, e) =>

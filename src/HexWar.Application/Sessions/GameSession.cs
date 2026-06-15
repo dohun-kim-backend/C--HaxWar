@@ -4,7 +4,10 @@
 
 namespace HexWar.Application.Sessions;
 
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using HexWar.Application.Commands;
+using HexWar.Application.Messaging;
 using HexWar.Application.Queries;
 using HexWar.Application.Services;
 using HexWar.Domain.Commands;
@@ -25,6 +28,8 @@ public class GameSession : IDisposable
     private readonly GameRoom _gameRoom;
     private readonly IEventBroadcaster _eventBroadcaster;
     private readonly IGameRoomRepository _repository;
+    private readonly IGameEventPublisher? _eventPublisher;
+    private readonly ILogger<GameSession>? _logger;
     private readonly Dictionary<PlayerSide, PlayerSessionState> _playerStates;
     private Timer? _planningTimer;
     private readonly TimeSpan _planningTimeout;
@@ -59,11 +64,15 @@ public class GameSession : IDisposable
         GameRoom gameRoom,
         IEventBroadcaster eventBroadcaster,
         IGameRoomRepository repository,
+        IGameEventPublisher? eventPublisher = null,
+        ILogger<GameSession>? logger = null,
         TimeSpan? planningTimeout = null)
     {
         _gameRoom = gameRoom ?? throw new ArgumentNullException(nameof(gameRoom));
         _eventBroadcaster = eventBroadcaster ?? throw new ArgumentNullException(nameof(eventBroadcaster));
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _eventPublisher = eventPublisher;
+        _logger = logger;
         _planningTimeout = planningTimeout ?? TimeSpan.FromSeconds(DefaultPlanningTimeoutSeconds);
 
         _playerStates = new()
@@ -73,6 +82,12 @@ public class GameSession : IDisposable
         };
 
         LastActivityAt = DateTime.UtcNow;
+
+        // Redis Pub/Sub 구독 설정 (분산 환경용)
+        if (_eventPublisher != null)
+        {
+            _eventPublisher.Subscribe(gameRoom.RoomId, HandleRemoteEventAsync);
+        }
     }
 
     // 연결 관리
@@ -521,6 +536,50 @@ public class GameSession : IDisposable
     // 마지막 시퀀스 번호 반환     
     public long GetLastSequenceNumber() => _eventSequence;
 
+    /// <summary>
+    /// 다른 서버에서 발행된 이벤트 처리
+    /// </summary>
+    private async Task HandleRemoteEventAsync(string eventJson)
+    {
+        try
+        {
+            var message = JsonSerializer.Deserialize<DistributedEventMessage>(eventJson, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                PropertyNameCaseInsensitive = true
+            });
+            if (message == null) return;
+
+            // 이벤트 데이터를 적절한 타입으로 역직렬화
+            var eventType = Type.GetType($"HexWar.Domain.Events.{message.EventType}, HexWar.Domain");
+            if (eventType == null) return;
+
+            var domainEvent = JsonSerializer.Deserialize(
+                message.EventData.GetRawText(), eventType, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    PropertyNameCaseInsensitive = true
+                }) as IDomainEvent;
+
+            if (domainEvent == null) return;
+
+            // 이 서버에 연결된 클라이언트들에게 WebSocket으로 전송
+            await _eventBroadcaster.BroadcastToRoomAsync(RoomId, domainEvent, message.SequenceNumber);
+
+            // CircularBuffer에도 저장 (재연결 복구용)
+            _eventBuffer.Add(new BufferedEvent
+            {
+                SequenceNumber = message.SequenceNumber,
+                Event = domainEvent,
+                Timestamp = message.Timestamp
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Error handling remote event for room {RoomId}", RoomId);
+        }
+    }
+
     private async Task BroadcastSingleEventAsync(IDomainEvent domainEvent, long sequenceNumber)
     {
         switch (domainEvent)
@@ -549,6 +608,12 @@ public class GameSession : IDisposable
             // 별도 브로드캐스트하지 않음 (버퍼에만 저장)
             default:
                 break;
+        }
+
+        // Redis Pub/Sub 발행 (다른 서버에 연결된 클라이언트용)
+        if (_eventPublisher != null)
+        {
+            await _eventPublisher.PublishAsync(RoomId, domainEvent, sequenceNumber);
         }
     }
 
@@ -581,6 +646,12 @@ public class GameSession : IDisposable
     public void Dispose()
     {
         StopPlanningTimer();
+        
+        if (_eventPublisher != null)
+        {
+            _eventPublisher.Unsubscribe(_gameRoom.RoomId);
+        }
+
         _eventBuffer.Dispose();
         _lock.Dispose();
 

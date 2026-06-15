@@ -1,10 +1,12 @@
 using HexWar.Application.Services;
 using HexWar.Application.Sessions;
 using HexWar.Infrastructure.Persistence;
+using HexWar.Infrastructure.Messaging;
 using HexWar.Infrastructure.WebSocket;
 using HexWar.Matchmaking.Services;
 using HexWar.Server.BackgroundServices;
 using HexWar.Server.WebSocket;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,21 +14,26 @@ var builder = WebApplication.CreateBuilder(args);
 var redisConfig = new RedisConfiguration();
 builder.Configuration.GetSection(RedisConfiguration.SectionName).Bind(redisConfig);
 
-builder.Services.AddSingleton(redisConfig);
 
+IConnectionMultiplexer? redis = null;
 try
 {
-    var redisRepo = new RedisGameRoomRepository(
-        redisConfig,
-        builder.Services.BuildServiceProvider().GetRequiredService<ILogger<RedisGameRoomRepository>>());
-
-    builder.Services.AddSingleton<IGameRoomRepository>(redisRepo);
-    Console.WriteLine("✅ Using Redis repository");
+    var connection = ConnectionMultiplexer.Connect(redisConfig.ToConfigurationOptions());
+    redis = connection;
+    builder.Services.AddSingleton<IConnectionMultiplexer>(connection);
+    builder.Services.AddSingleton(redisConfig);
+    
+    // Redis 기반 서비스
+    builder.Services.AddSingleton<IGameRoomRepository, RedisGameRoomRepository>();
+    builder.Services.AddSingleton<IGameEventPublisher, RedisEventPublisher>();
+    
+    Console.WriteLine("✅ Redis connected - distributed mode");
 }
 catch (Exception)
 {
-    Console.WriteLine("⚠️ Redis unavailable, falling back to in-memory repository");
+    Console.WriteLine("⚠️ Redis unavailable - standalone mode");
     builder.Services.AddSingleton<IGameRoomRepository, InMemoryGameRoomRepository>();
+    // IGameEventPublisher 등록 안 함 → null 허용
 }
 
 // 공통 서비스 (WebSocket + gRPC에서 공유)
