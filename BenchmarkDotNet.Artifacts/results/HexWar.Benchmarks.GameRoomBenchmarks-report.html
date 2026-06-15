@@ -2,7 +2,7 @@
 <html lang='en'>
 <head>
 <meta charset='utf-8' />
-<title>HexWar.Benchmarks.GameRoomBenchmarks-20260613-134427</title>
+<title>HexWar.Benchmarks.GameRoomBenchmarks-20260613-151918</title>
 
 <style type="text/css">
 	table { border-collapse: collapse; display: block; width: 100%; overflow: auto; }
@@ -17,19 +17,19 @@ BenchmarkDotNet v0.13.12, Windows 11 (10.0.26200.8655)
 13th Gen Intel Core i7-13700KF, 1 CPU, 24 logical and 16 physical cores
 .NET SDK 9.0.315
   [Host]     : .NET 9.0.17 (9.0.1726.26416), X64 RyuJIT AVX2
-  Job-DUFVFX : .NET 9.0.17 (9.0.1726.26416), X64 RyuJIT AVX2
+  Job-SRXEQW : .NET 9.0.17 (9.0.1726.26416), X64 RyuJIT AVX2
 </code></pre>
 <pre><code>Concurrent=True  Force=True  Server=True  
 </code></pre>
 
 <table>
-<thead><tr><th>Method       </th><th>roundCount</th><th>Mean</th><th>Error</th><th>StdDev</th><th>Gen0</th><th>Allocated</th>
+<thead><tr><th>Method             </th><th>count</th><th>Mean   </th><th>Error</th><th>StdDev</th><th>Gen0</th><th>Allocated</th>
 </tr>
-</thead><tbody><tr><td>CreateAndInitialize</td><td>?</td><td>1.207 &mu;s</td><td>0.0240 &mu;s</td><td>0.0420 &mu;s</td><td>0.1202</td><td>6.7 KB</td>
-</tr><tr><td>SimulateRounds</td><td>1</td><td>4.565 &mu;s</td><td>0.0912 &mu;s</td><td>0.1421 &mu;s</td><td>0.2899</td><td>16.55 KB</td>
-</tr><tr><td>SimulateRounds</td><td>5</td><td>20.885 &mu;s</td><td>0.4094 &mu;s</td><td>0.6128 &mu;s</td><td>0.9155</td><td>51.81 KB</td>
-</tr><tr><td>SimulateRounds</td><td>10</td><td>42.724 &mu;s</td><td>0.5326 &mu;s</td><td>0.4448 &mu;s</td><td>1.6479</td><td>95.1 KB</td>
-</tr><tr><td>SimulateRounds</td><td>20</td><td>76.616 &mu;s</td><td>1.5018 &mu;s</td><td>1.7294 &mu;s</td><td>3.1738</td><td>177.95 KB</td>
+</thead><tbody><tr><td>CreateAndInitialize</td><td>?</td><td>1.210 &mu;s</td><td>0.0239 &mu;s</td><td>0.0461 &mu;s</td><td>0.1545</td><td>6.7 KB</td>
+</tr><tr><td>SimulateOneCompleteGame</td><td>?</td><td>174.250 &mu;s</td><td>3.0644 &mu;s</td><td>3.5289 &mu;s</td><td>5.3711</td><td>300.84 KB</td>
+</tr><tr><td>SimulateMultipleGamesPure</td><td>10</td><td>1,756.144 &mu;s</td><td>30.0824 &mu;s</td><td>28.1391 &mu;s</td><td>52.7344</td><td>3007.07 KB</td>
+</tr><tr><td>SimulateMultipleGamesPure</td><td>50</td><td>8,856.651 &mu;s</td><td>153.0927 &mu;s</td><td>143.2030 &mu;s</td><td>265.6250</td><td>15054.38 KB</td>
+</tr><tr><td>SimulateMultipleGamesPure</td><td>100</td><td>17,360.275 &mu;s</td><td>344.0638 &mu;s</td><td>555.5988 &mu;s</td><td>531.2500</td><td>30018.48 KB</td>
 </tr></tbody></table>
 </body>
 </html>
