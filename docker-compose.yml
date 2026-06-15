@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  hexwar-server:
+    build:
+      context: .
+      dockerfile: src/HexWar.Server/Dockerfile
+    ports:
+      - "5000:5000"
+      - "5001:5001"
+    
+    # 리소스 제한 (하드웨어 사양 시뮬레이션)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'       # 최대 CPU 2코어
+          memory: '512M'    # 최대 메모리 512MB
+        reservations:
+          cpus: '1.0'       # 최소 CPU 1코어
+          memory: '256M'    # 최소 메모리 256MB
+    
+    # 환경 변수
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5000
+      - DOTNET_GCServer=1
+      - DOTNET_GCHeapCount=2          # 2코어에 맞춤
+    
+    # 헬스체크
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/diagnostics/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # 로깅
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
