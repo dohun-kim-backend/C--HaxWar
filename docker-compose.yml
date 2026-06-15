@@ -9,12 +9,7 @@ services:
     volumes:
       - redis-data:/data
     command: >
-      redis-server
-      --appendonly yes
-      --maxmemory 256mb
-      --maxmemory-policy volatile-lru
-      --save 60 1
-      --loglevel notice
+      redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy volatile-lru --save 60 1 --loglevel notice
     deploy:
       resources:
         limits:
@@ -24,7 +19,7 @@ services:
           cpus: '0.25'
           memory: '100M'
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -46,33 +41,33 @@ services:
       - "5001:5001"
     depends_on:
       redis:
-        condition: service_healthy  # Redis가 정상 실행된 후 시작
+        condition: service_healthy # Redis가 정상 실행된 후 시작
     # 리소스 제한 (하드웨어 사양 시뮬레이션)
     deploy:
       resources:
         limits:
-          cpus: '2.0'       # 최대 CPU 2코어
-          memory: '512M'    # 최대 메모리 512MB
+          cpus: '2.0' # 최대 CPU 2코어
+          memory: '512M' # 최대 메모리 512MB
         reservations:
-          cpus: '1.0'       # 최소 CPU 1코어
-          memory: '256M'    # 최소 메모리 256MB
-    
+          cpus: '1.0' # 최소 CPU 1코어
+          memory: '256M' # 최소 메모리 256MB
+
     # 환경 변수
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5000
       - DOTNET_GCServer=1
-      - DOTNET_GCHeapCount=2          # 2코어에 맞춤
-      - Redis__ConnectionString=redis:6379          # Redis 연결 문자열
-      - ConnectionStrings__Redis=redis:6379          # 대체 키
+      - DOTNET_GCHeapCount=2 # 2코어에 맞춤
+      - Redis__ConnectionString=redis:6379 # Redis 연결 문자열
+      - ConnectionStrings__Redis=redis:6379 # 대체 키
     # 헬스체크
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/api/diagnostics/stats"]
+      test: [ "CMD", "curl", "-f", "http://localhost:5000/api/diagnostics/stats" ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-  
+
     # 로깅
     logging:
       driver: "json-file"
@@ -81,6 +76,13 @@ services:
         max-file: "3"
     networks:
       - hexwar-network
+
+  hexwar-benchmarks:
+    build:
+      context: .
+      dockerfile: tests/HexWar.Benchmarks/Dockerfile
+    volumes:
+      - ./BenchmarkDotNet.Artifacts:/app/BenchmarkDotNet.Artifacts
 
 volumes:
   redis-data:
